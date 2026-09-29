@@ -1,9 +1,10 @@
-import 'dart:convert';
-
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:taskfollow/View/pages/edit_task.dart';
 import 'package:taskfollow/View/pages/login_page.dart';
+import 'package:taskfollow/View/widgets/desktop_wrapper.dart';
 import 'package:taskfollow/data/notifiers.dart';
 import 'package:taskfollow/data/task.dart';
 
@@ -16,43 +17,9 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  List<Task> tasks = [
-    Task(
-      id: '1',
-      title: 'Learn Flutter',
-      description: 'Complete the bootcapm challenge',
-      isCompleted: false,
-    ),
-    Task(
-      id: '2',
-      title: 'Build a project',
-      description: 'Create a project',
-      isCompleted: false,
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final List<String>? taskStringList = prefs.getStringList('tasks');
-    if (taskStringList != null) {
-      setState(() {
-        tasks = taskStringList
-            .map((task) => Task.fromJson(jsonDecode(task)))
-            .toList();
-      });
-    }
-  }
-
-  Future<void> _saveData() async {
-    final prefs = await SharedPreferences.getInstance();
-    final stringList = tasks.map((task) => jsonEncode(task.toJson())).toList();
-    await prefs.setStringList('tasks', stringList);
   }
 
   void _addTaskDialog() {
@@ -95,19 +62,20 @@ class _DashboardPageState extends State<DashboardPage> {
             child: Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               if (titleController.text.trim().isNotEmpty) {
-                setState(() {
-                  tasks.add(
-                    Task(
-                      id: DateTime.now().toString(),
-                      title: titleController.text.trim(),
-                      description: descriptionController.text.trim(),
-                      isCompleted: false,
-                    ),
-                  );
-                });
-                _saveData();
+                final user = FirebaseAuth.instance.currentUser;
+                if (user != null) {
+                  await FirebaseFirestore.instance.collection('tasks').add({
+                    'title': titleController.text.trim(),
+                    'description': descriptionController.text.trim(),
+                    'isCompleted': false,
+                    'userId': user.uid,
+                  });
+                }
+                if (!context.mounted) {
+                  return;
+                }
                 Navigator.pop(context);
               }
             },
@@ -119,32 +87,43 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
         ],
       ),
+    ).then((_) {
+      titleController.dispose();
+      descriptionController.dispose();
+    });
+  }
+
+  void _toggleTask(String id, bool currentValue) async {
+    await FirebaseFirestore.instance.collection('tasks').doc(id).update({
+      'isCompleted': !currentValue,
+    });
+  }
+
+  void _updateTask(Task updatedTask) async {
+    await FirebaseFirestore.instance
+        .collection('tasks')
+        .doc(updatedTask.id)
+        .update({
+          'title': updatedTask.title,
+          'description': updatedTask.description,
+          'isCompleted': updatedTask.isCompleted,
+        });
+  }
+
+  void _deleteTask(String id) async {
+    await FirebaseFirestore.instance.collection('tasks').doc(id).delete();
+  }
+
+  Future<void> _handleLogout() async {
+    final logout = await FirebaseAuth.instance.signOut();
+    if (!mounted) {
+      return;
+    }
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => LoginPage()),
+      (route) => false,
     );
-  }
-
-  void _toggleTask(String id) {
-    setState(() {
-      final task = tasks.firstWhere((task) => task.id == id);
-      task.isCompleted = !task.isCompleted;
-    });
-    _saveData();
-  }
-
-  void _updateTask(Task updatedTask) {
-    setState(() {
-      final index = tasks.indexWhere((task) => task.id == updatedTask.id);
-      if (index != -1) {
-        tasks[index] = updatedTask;
-      }
-    });
-    _saveData();
-  }
-
-  void _deleteTask(String id) {
-    setState(() {
-      tasks.removeWhere((task) => task.id == id);
-    });
-    _saveData();
   }
 
   @override
@@ -174,39 +153,65 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
           IconButton(
             onPressed: () {
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => LoginPage()),
-                (route) => false,
-              );
+              _handleLogout();
             },
             icon: Icon(Icons.logout),
           ),
         ],
       ),
-      body: tasks.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.task, size: 80, color: Colors.grey.shade400),
-                  SizedBox(height: 20),
-                  Text(
-                    'No tasks yet!',
-                    style: TextStyle(fontSize: 20, color: Colors.grey.shade600),
-                  ),
-                  Text(
-                    'Tap + to add your first task',
-                    style: TextStyle(color: Colors.grey.shade500),
-                  ),
-                ],
-              ),
-            )
-          : ListView.builder(
+      body: DesktopWrapper(
+        maxWidth: 850,
+        child: StreamBuilder(
+          stream: FirebaseFirestore.instance
+              .collection('tasks')
+              .where(
+                'userId',
+                isEqualTo: FirebaseAuth.instance.currentUser!.uid,
+              )
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return Center(child: CircularProgressIndicator.adaptive());
+            }
+            if (snapshot.hasError) {
+              return Center(child: Text('Something went wrong!'));
+            }
+            final docs = snapshot.data?.docs ?? [];
+            if (docs.isEmpty) {
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.task, size: 80, color: Colors.grey.shade400),
+                    SizedBox(height: 20),
+                    Text(
+                      'No tasks yet!',
+                      style: TextStyle(
+                        fontSize: 20,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    Text(
+                      'Tap + to add your first task',
+                      style: TextStyle(color: Colors.grey.shade500),
+                    ),
+                  ],
+                ),
+              );
+            }
+            return ListView.builder(
               padding: EdgeInsets.all(16),
-              itemCount: tasks.length,
+              itemCount: docs.length,
               itemBuilder: (context, index) {
-                final task = tasks[index];
+                final doc = docs[index];
+                final data = doc.data() as Map<String, dynamic>;
+
+                final task = Task(
+                  id: doc.id,
+                  title: data['title'] ?? '',
+                  description: data['description'] ?? '',
+                  isCompleted: data['isCompleted'] ?? false,
+                );
                 return Card(
                   elevation: 2,
                   margin: EdgeInsets.only(bottom: 12),
@@ -245,8 +250,8 @@ class _DashboardPageState extends State<DashboardPage> {
                         : null,
                     leading: Checkbox(
                       value: task.isCompleted,
-                      onChanged: (_) {
-                        _toggleTask(task.id);
+                      onChanged: (value) {
+                        _toggleTask(task.id, task.isCompleted);
                       },
                     ),
                     trailing: IconButton(
@@ -258,7 +263,10 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                 );
               },
-            ),
+            );
+          },
+        ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           _addTaskDialog();

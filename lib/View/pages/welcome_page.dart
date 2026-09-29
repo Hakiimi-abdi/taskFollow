@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:taskfollow/View/pages/login_page.dart';
+import 'package:taskfollow/View/widgets/resposive_wrapper.dart';
 
 class WelcomePage extends StatelessWidget {
   const WelcomePage({super.key});
@@ -18,7 +19,8 @@ class WelcomePage extends StatelessWidget {
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24.0),
-            child: Center(
+
+            child: ResposiveWrapper(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
