@@ -1,6 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:taskfollow/View/pages/dashboard_page.dart';
+import 'package:taskfollow/View/pages/verify_email_page.dart';
 import 'package:taskfollow/View/widgets/resposive_wrapper.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -61,6 +61,7 @@ class _RegisterPageState extends State<RegisterPage> {
           .createUserWithEmailAndPassword(email: email, password: password);
       if (userCredential.user != null) {
         await userCredential.user!.updateDisplayName(name);
+        await userCredential.user!.sendEmailVerification();
       }
 
       if (!mounted) {
@@ -69,7 +70,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (context) => DashboardPage(userName: name)),
+        MaterialPageRoute(builder: (_) => VerifyEmailPage()),
         (route) => false,
       );
     } on FirebaseAuthException catch (e) {

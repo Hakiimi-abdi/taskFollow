@@ -13,6 +13,7 @@ class EditTask extends StatefulWidget {
 class _EditTaskState extends State<EditTask> {
   late TextEditingController _titleController;
   late TextEditingController _descriptionController;
+  DateTime? _selectedDueDate;
 
   @override
   void initState() {
@@ -21,6 +22,7 @@ class _EditTaskState extends State<EditTask> {
     _descriptionController = TextEditingController(
       text: widget.task.description,
     );
+    _selectedDueDate = widget.task.dueDate;
   }
 
   @override
@@ -36,8 +38,13 @@ class _EditTaskState extends State<EditTask> {
       title: _titleController.text.trim(),
       description: _descriptionController.text.trim(),
       isCompleted: widget.task.isCompleted,
+      dueDate: _selectedDueDate,
     );
     Navigator.pop(context, updatedTask);
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
   void _deleteTask() {
@@ -82,55 +89,110 @@ class _EditTaskState extends State<EditTask> {
         ],
       ),
       body: ResposiveWrapper(
-        child: SafeArea(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.all(24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextField(
-                  controller: _titleController,
+        child: Padding(
+          padding: EdgeInsets.all(24.0),
+          child: Column(
+            children: [
+              TextField(
+                controller: _titleController,
+                decoration: InputDecoration(
+                  labelText: 'Task Title',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  prefixIcon: Icon(Icons.title),
+                ),
+              ),
+              SizedBox(height: 20),
+              TextField(
+                controller: _descriptionController,
+                decoration: InputDecoration(
+                  labelText: 'Description',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  prefixIcon: Icon(Icons.description),
+                ),
+                maxLines: 3,
+              ),
+              SizedBox(height: 20),
+              InkWell(
+                onTap: () async {
+                  final DateTime? picked = await showDatePicker(
+                    context: context,
+                    initialDate: _selectedDueDate ?? DateTime.now(),
+                    firstDate: DateTime.now(),
+                    lastDate: DateTime.now().add(Duration(days: 365 * 5)),
+                  );
+                  if (picked != null) {
+                    if (!context.mounted) return;
+                    final TimeOfDay? time = await showTimePicker(
+                      context: context,
+                      initialTime: TimeOfDay.fromDateTime(
+                        _selectedDueDate ?? DateTime.now(),
+                      ),
+                    );
+                    setState(() {
+                      _selectedDueDate = DateTime(
+                        picked.year,
+                        picked.month,
+                        picked.day,
+                        time?.hour ?? 12,
+                        time?.minute ?? 0,
+                      );
+                    });
+                  }
+                },
+                child: InputDecorator(
                   decoration: InputDecoration(
-                    labelText: 'Title',
-                    prefixIcon: Icon(Icons.title),
+                    labelText: 'Due Date (optional)',
+                    prefixIcon: Icon(
+                      Icons.calendar_today,
+                      color: Colors.teal.shade700,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
-                  ),
-                ),
-                SizedBox(height: 20),
-                TextField(
-                  controller: _descriptionController,
-                  decoration: InputDecoration(
-                    labelText: 'Description',
-                    prefixIcon: Icon(Icons.description),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  maxLines: 3,
-                ),
-                SizedBox(height: 30),
-                ElevatedButton(
-                  onPressed: _titleController.text.isEmpty ? null : _saveTask,
-
-                  style: ElevatedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    backgroundColor: Colors.teal.shade700,
-                    foregroundColor: Colors.white,
-                    elevation: 2,
-                    textStyle: TextStyle(fontSize: 18),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
+                    suffixIcon: _selectedDueDate != null
+                        ? IconButton(
+                            icon: Icon(Icons.clear),
+                            onPressed: () =>
+                                setState(() => _selectedDueDate = null),
+                          )
+                        : null,
                   ),
                   child: Text(
-                    'Save Changes',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    _selectedDueDate == null
+                        ? 'No due date'
+                        : _formatDate(_selectedDueDate!),
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: _selectedDueDate == null
+                          ? Colors.grey
+                          : Colors.black87,
+                    ),
                   ),
                 ),
-              ],
-            ),
+              ),
+              SizedBox(height: 30),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () =>
+                      _titleController.text.trim().isEmpty ? null : _saveTask(),
+                  style: ElevatedButton.styleFrom(
+                    padding: EdgeInsets.symmetric(vertical: 15),
+                    backgroundColor: Colors.teal,
+                    foregroundColor: Colors.white,
+                    textStyle: TextStyle(fontSize: 18),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text('Save Changes'),
+                ),
+              ),
+            ],
           ),
         ),
       ),

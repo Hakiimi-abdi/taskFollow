@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:taskfollow/View/pages/dashboard_page.dart';
 import 'package:taskfollow/View/pages/login_page.dart';
+import 'package:taskfollow/View/pages/verify_email_page.dart';
 import 'package:taskfollow/View/pages/welcome_page.dart';
 import 'package:taskfollow/data/notifiers.dart';
 import 'package:taskfollow/firebase_options.dart';
+import 'package:taskfollow/services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await NotificationService().init();
   runApp(const MyApp());
 }
 
@@ -55,11 +58,15 @@ class _MyAppState extends State<MyApp> {
                 return Center(child: CircularProgressIndicator());
               }
               if (snapshot.data != null) {
+                final user = snapshot.data!;
+                if (!user.emailVerified) {
+                  return VerifyEmailPage();
+                }
                 return DashboardPage(
                   userName: snapshot.data?.displayName ?? 'User',
                 );
               }
-              return LoginPage();
+              return WelcomePage();
             },
           ),
         );

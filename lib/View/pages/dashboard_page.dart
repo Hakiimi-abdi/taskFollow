@@ -2,11 +2,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:taskfollow/View/pages/add_task_page.dart';
 import 'package:taskfollow/View/pages/edit_task.dart';
 import 'package:taskfollow/View/pages/login_page.dart';
 import 'package:taskfollow/View/widgets/desktop_wrapper.dart';
 import 'package:taskfollow/data/notifiers.dart';
 import 'package:taskfollow/data/task.dart';
+import 'package:taskfollow/services/notification_service.dart';
 
 class DashboardPage extends StatefulWidget {
   final String userName;
@@ -22,75 +24,8 @@ class _DashboardPageState extends State<DashboardPage> {
     super.initState();
   }
 
-  void _addTaskDialog() {
-    final TextEditingController titleController = TextEditingController();
-    final TextEditingController descriptionController = TextEditingController();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Add New Task'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleController,
-              decoration: InputDecoration(
-                labelText: 'Title',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-            SizedBox(height: 16),
-            TextField(
-              controller: descriptionController,
-              decoration: InputDecoration(
-                labelText: 'Description',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              if (titleController.text.trim().isNotEmpty) {
-                final user = FirebaseAuth.instance.currentUser;
-                if (user != null) {
-                  await FirebaseFirestore.instance.collection('tasks').add({
-                    'title': titleController.text.trim(),
-                    'description': descriptionController.text.trim(),
-                    'isCompleted': false,
-                    'userId': user.uid,
-                  });
-                }
-                if (!context.mounted) {
-                  return;
-                }
-                Navigator.pop(context);
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.teal.shade700,
-              foregroundColor: Colors.white,
-            ),
-            child: Text('Add'),
-          ),
-        ],
-      ),
-    ).then((_) {
-      titleController.dispose();
-      descriptionController.dispose();
-    });
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 
   void _toggleTask(String id, bool currentValue) async {
@@ -100,17 +35,35 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   void _updateTask(Task updatedTask) async {
+    if (updatedTask.dueDate != null) {
+      await NotificationService().scheduleTaskNotification(
+        id: updatedTask.id.hashCode & 0x7FFFFFFF,
+        title: updatedTask.title,
+        body: updatedTask.description,
+        scheduledTime: updatedTask.dueDate!,
+      );
+    } else {
+      await NotificationService().cancelNotification(
+        updatedTask.id.hashCode & 0x7FFFFFFF,
+      );
+    }
+
     await FirebaseFirestore.instance
         .collection('tasks')
         .doc(updatedTask.id)
         .update({
+          'id': updatedTask.id,
           'title': updatedTask.title,
           'description': updatedTask.description,
           'isCompleted': updatedTask.isCompleted,
+          'dueDate': updatedTask.dueDate != null
+              ? Timestamp.fromDate(updatedTask.dueDate!)
+              : null,
         });
   }
 
   void _deleteTask(String id) async {
+    await NotificationService().cancelNotification(id.hashCode & 0x7FFFFFFF);
     await FirebaseFirestore.instance.collection('tasks').doc(id).delete();
   }
 
@@ -172,9 +125,8 @@ class _DashboardPageState extends State<DashboardPage> {
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return Center(child: CircularProgressIndicator.adaptive());
-            }
-            if (snapshot.hasError) {
-              return Center(child: Text('Something went wrong!'));
+            } else if (snapshot.hasError) {
+              return Center(child: Text('An error occurred!'));
             }
             final docs = snapshot.data?.docs ?? [];
             if (docs.isEmpty) {
@@ -204,14 +156,9 @@ class _DashboardPageState extends State<DashboardPage> {
               itemCount: docs.length,
               itemBuilder: (context, index) {
                 final doc = docs[index];
-                final data = doc.data() as Map<String, dynamic>;
+                final data = doc.data();
 
-                final task = Task(
-                  id: doc.id,
-                  title: data['title'] ?? '',
-                  description: data['description'] ?? '',
-                  isCompleted: data['isCompleted'] ?? false,
-                );
+                final task = Task.fromJson(doc.id, data);
                 return Card(
                   elevation: 2,
                   margin: EdgeInsets.only(bottom: 12),
@@ -223,9 +170,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       final result = await Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) {
-                            return EditTask(task: task);
-                          },
+                          builder: (context) => EditTask(task: task),
                         ),
                       );
                       if (result == 'delete') {
@@ -240,14 +185,51 @@ class _DashboardPageState extends State<DashboardPage> {
                         decoration: task.isCompleted
                             ? TextDecoration.lineThrough
                             : null,
-                        color: task.isCompleted ? Colors.grey : null,
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    subtitle: task.description.isNotEmpty
-                        ? Text(task.description)
-                        : null,
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (task.description.isNotEmpty) ...[
+                          Text(task.description),
+                          SizedBox(height: 4),
+                        ],
+                        if (task.dueDate != null) ...[
+                          Row(
+                            children: [
+                              Icon(
+                                task.isOverdue
+                                    ? Icons.error_outline
+                                    : Icons.schedule,
+                                size: 14,
+                                color: task.isOverdue
+                                    ? Colors.red
+                                    : task.isDueToday
+                                    ? Colors.orange
+                                    : Colors.grey,
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                _formatDate(task.dueDate!),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: task.isOverdue
+                                      ? Colors.red
+                                      : task.isDueToday
+                                      ? Colors.orange
+                                      : Colors.grey,
+                                  fontWeight: task.isOverdue || task.isDueToday
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
                     leading: Checkbox(
                       value: task.isCompleted,
                       onChanged: (value) {
@@ -255,10 +237,8 @@ class _DashboardPageState extends State<DashboardPage> {
                       },
                     ),
                     trailing: IconButton(
-                      onPressed: () {
-                        _deleteTask(task.id);
-                      },
-                      icon: Icon(Icons.delete, color: Colors.red),
+                      onPressed: () => _deleteTask(task.id),
+                      icon: Icon(Icons.delete_outline, color: Colors.red),
                     ),
                   ),
                 );
@@ -269,7 +249,10 @@ class _DashboardPageState extends State<DashboardPage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          _addTaskDialog();
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => AddTaskPage()),
+          );
         },
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
