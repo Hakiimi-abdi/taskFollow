@@ -50,6 +50,20 @@ class _MyAppState extends State<MyApp> {
               brightness: isDarkMode ? Brightness.dark : Brightness.light,
             ),
             useMaterial3: true,
+            datePickerTheme: DatePickerThemeData(
+              headerForegroundColor: isDarkMode ? Colors.white : Colors.black,
+              dayStyle: TextStyle(
+                color: isDarkMode ? Colors.white : Colors.black,
+              ),
+              yearStyle: TextStyle(
+                color: isDarkMode ? Colors.white : Colors.black,
+              ),
+            ),
+            timePickerTheme: TimePickerThemeData(
+              hourMinuteTextColor: isDarkMode ? Colors.white : Colors.black,
+              dayPeriodTextColor: isDarkMode ? Colors.white : Colors.black,
+              dialTextColor: isDarkMode ? Colors.white : Colors.black,
+            ),
           ),
           home: StreamBuilder(
             stream: FirebaseAuth.instance.authStateChanges(),

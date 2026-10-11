@@ -169,7 +169,9 @@ class _EditTaskState extends State<EditTask> {
                       fontSize: 16,
                       color: _selectedDueDate == null
                           ? Colors.grey
-                          : Colors.black87,
+                          : (Theme.of(context).brightness == Brightness.dark
+                                ? Colors.white
+                                : Colors.black87),
                     ),
                   ),
                 ),
